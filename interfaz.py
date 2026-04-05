@@ -657,20 +657,6 @@ if medicacion_texto:
     ]
 # ANÁLISIS
 # ------------------------------
-if st.button("🔍 Analizar medicación"):
-
-    paciente = {
-        "edad": edad,
-        "egfr": egfr,
-        "diagnosticos": diagnosticos,
-        "medicamentos": medicamentos
-    }
-
-    # AQUÍ LLAMAS A TU MOTOR REAL
-    alertas = evaluar_paciente(paciente)  # tu función
-
-    st.header("📊 Resultados")
-
 with st.form("form_analisis"):
     submit = st.form_submit_button("🔍 Analizar medicación")
 
