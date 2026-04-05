@@ -520,15 +520,15 @@ def evaluar_regla(regla, paciente):
         if paciente["egfr"] >= cond["egfr_max"]:
             return False
 
-    # 3. Reglas de combinación A + B (p.ej. anticoagulante + AINE)
+    # 3. Reglas de combinación A + B (ej. Anticoagulante + AINE)
     if "farmacos_combinados" in cond:
         grupo_a = cond.get("farmacos", [])
         grupo_b = cond.get("farmacos_combinados", [])
 
-        hay_grupo_a = any(f in paciente["medicamentos"] for f in grupo_a)
-        hay_grupo_b = any(f in paciente["medicamentos"] for f in grupo_b)
+        hay_a = any(f in paciente["medicamentos"] for f in grupo_a)
+        hay_b = any(f in paciente["medicamentos"] for f in grupo_b)
 
-        return hay_grupo_a and hay_grupo_b
+        return hay_a and hay_b
 
     # 4. Reglas por conteo (≥ X fármacos del mismo grupo)
     if "minimo_coincidencias" in cond:
@@ -538,24 +538,33 @@ def evaluar_regla(regla, paciente):
                 contador += 1
         return contador >= cond["minimo_coincidencias"]
 
-    # 5. Reglas de fármaco individual
+    # 5. Reglas de fármaco individual (STOPP / Beers)
     if "farmacos" in cond:
         if not any(f in paciente["medicamentos"] for f in cond["farmacos"]):
             return False
 
-    # 6. Ausencia de indicación (conciliación)
-    if "diagnosticos_requeridos" in cond:
-        if not any(
-            d in paciente.get("diagnosticos", [])
-            for d in cond["diagnosticos_requeridos"]
-        ):
-            return True
-        else:
-            return False
+    # 6. Reglas START: diagnóstico presente + fármacos ausentes
+    if "farmacos_ausentes" in cond:
 
-    # Si no hay condiciones específicas, no alerta
+        # Comprobar que el diagnóstico requerido SÍ está
+        if "diagnosticos_requeridos" in cond:
+            tiene_dx = any(
+                d in paciente.get("diagnosticos", [])
+                for d in cond["diagnosticos_requeridos"]
+            )
+            if not tiene_dx:
+                return False  # ❌ No aplica START
+
+        # Comprobar que NO toma ninguno de los fármacos esperados
+        toma_alguno = any(
+            f in paciente["medicamentos"]
+            for f in cond["farmacos_ausentes"]
+        )
+
+        return not toma_alguno
+
+    # Si ninguna condición aplica → no alerta
     return False
-
 
 def evaluar_paciente(paciente):
     alertas = []
