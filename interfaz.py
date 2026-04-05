@@ -222,20 +222,31 @@ reglas = [
     "recomendacion": "Reevaluar combinación de diuréticos y ajustar tratamiento.",
     "fuente": "STOPP"
     },
-    {
-    "id": "IND_01",
-    "nombre": "Anticoagulación oral sin indicación registrada",
+ {
+    "id": "IND_OAC_01",
+    "tipo": "conciliacion",
+    "nombre": "Anticoagulante sin indicación documentada",
     "condiciones": {
-        "farmacos": ["apixaban","rivaroxaban","edoxaban"],
-        "diagnosticos_requeridos": [
+        "farmacos": [
+            "apixaban",
+            "rivaroxaban",
+            "dabigatran",
+            "edoxaban",
+            "warfarina",
+            "acenocumarol"
+        ],
+        "diagnosticos_ausentes": [
             "fibrilacion auricular",
+            "fa",
             "tromboembolismo venoso",
             "embolia pulmonar"
         ]
     },
-    "problema": "Tratamiento anticoagulante sin indicación documentada en diagnósticos",
-    "recomendacion": "Revisar la indicación clínica del anticoagulante y documentarla si procede.",
-    "fuente": "Conciliación / Buenas prácticas clínicas"
+    "problema": "Tratamiento anticoagulante sin indicación registrada",
+    "recomendacion": "Revisar y documentar la indicación clínica del anticoagulante.",
+    "fuente": "Conciliación",
+    "prioridad": "media"
+
     },
     {
     "id": "CRIT_HEM_01",
@@ -505,22 +516,55 @@ reglas = [
 # ============================================================
 # MOTOR DE EVALUACIÓN
 # ============================================================
-
 def evaluar_regla(regla, paciente):
 
     cond = regla["condiciones"]
 
-    # 1. Edad mínima
-    if "edad_min" in cond:
-        if paciente["edad"] < cond["edad_min"]:
-            return False
+    # =====================================================
+    # 0. CONCILIACIÓN: fármaco presente + diagnóstico AUSENTE
+    # =====================================================
+    if "diagnosticos_ausentes" in cond:
 
-    # 2. eGFR máximo
-    if "egfr_max" in cond:
-        if paciente["egfr"] >= cond["egfr_max"]:
-            return False
+        # Debe tomar el fármaco
+        if "farmacos" in cond:
+            toma_farmaco = any(
+                f in paciente["medicamentos"]
+                for f in cond["farmacos"]
+            )
+            if not toma_farmaco:
+                return False
 
-    # 3. Reglas de combinación A + B (ej. Anticoagulante + AINE)
+        # NO debe tener ninguno de los diagnósticos que justifican el fármaco
+        tiene_indicacion = any(
+            d in paciente.get("diagnosticos", [])
+            for d in cond["diagnosticos_ausentes"]
+        )
+
+        return not tiene_indicacion
+
+    # =====================================================
+    # 1. START: diagnóstico presente + fármaco AUSENTE
+    # =====================================================
+    if "farmacos_ausentes" in cond:
+
+        if "diagnosticos_requeridos" in cond:
+            tiene_dx = any(
+                d in paciente.get("diagnosticos", [])
+                for d in cond["diagnosticos_requeridos"]
+            )
+            if not tiene_dx:
+                return False
+
+        toma_alguno = any(
+            f in paciente["medicamentos"]
+            for f in cond["farmacos_ausentes"]
+        )
+
+        return not toma_alguno
+
+    # =====================================================
+    # 2. COMBINACIONES (A + B)
+    # =====================================================
     if "farmacos_combinados" in cond:
         grupo_a = cond.get("farmacos", [])
         grupo_b = cond.get("farmacos_combinados", [])
@@ -530,41 +574,40 @@ def evaluar_regla(regla, paciente):
 
         return hay_a and hay_b
 
-    # 4. Reglas por conteo (≥ X fármacos del mismo grupo)
+    # =====================================================
+    # 3. CONTEO (≥ X fármacos)
+    # =====================================================
     if "minimo_coincidencias" in cond:
-        contador = 0
-        for f in cond.get("farmacos", []):
-            if f in paciente["medicamentos"]:
-                contador += 1
+        contador = sum(
+            1 for f in cond.get("farmacos", [])
+            if f in paciente["medicamentos"]
+        )
         return contador >= cond["minimo_coincidencias"]
 
-    # 5. Reglas de fármaco individual (STOPP / Beers)
+    # =====================================================
+    # 4. STOPP / BEERS
+    # =====================================================
+    if "edad_min" in cond:
+        if paciente["edad"] < cond["edad_min"]:
+            return False
+
+    if "egfr_max" in cond:
+        if paciente["egfr"] >= cond["egfr_max"]:
+            return False
+
+    if "diagnosticos_requeridos" in cond:
+        tiene_dx = any(
+            d in paciente.get("diagnosticos", [])
+            for d in cond["diagnosticos_requeridos"]
+        )
+        if not tiene_dx:
+            return False
+
     if "farmacos" in cond:
         if not any(f in paciente["medicamentos"] for f in cond["farmacos"]):
             return False
 
-    # 6. Reglas START: diagnóstico presente + fármacos ausentes
-    if "farmacos_ausentes" in cond:
-
-        # Comprobar que el diagnóstico requerido SÍ está
-        if "diagnosticos_requeridos" in cond:
-            tiene_dx = any(
-                d in paciente.get("diagnosticos", [])
-                for d in cond["diagnosticos_requeridos"]
-            )
-            if not tiene_dx:
-                return False  # ❌ No aplica START
-
-        # Comprobar que NO toma ninguno de los fármacos esperados
-        toma_alguno = any(
-            f in paciente["medicamentos"]
-            for f in cond["farmacos_ausentes"]
-        )
-
-        return not toma_alguno
-
-    # Si ninguna condición aplica → no alerta
-    return False
+    return True
 
 def evaluar_paciente(paciente):
     alertas = []
